@@ -155,13 +155,15 @@ async def get_current_track(client, token):
         return {"success": False}
 
 
-class YaMu(loader.Module):
+class YaMuBETA(loader.Module):
     """
-    Модуль для Яндекс.Музыки. Основан на YmNow от vsecoder. Создатель: @murpiz [BETA]
+    Модуль для Яндекс.Музыки. Основан на YmNow от vsecoder (@vsecoder_m). Создатель: @murpiz [BETA]
     """
     strings = {
         "name": "YaMu",
         "no_token": "<b><emoji document_id=6030801830739448093>⚠️</emoji>  Укажи токен в конфиге! Если ты видишь это сообщение, но уже указал токен, то убедись в его правильности.</b>",
+        "liked": "<b><emoji document_id=5208446645892562826>💘</emoji> Текущий трек был добавлен в плейлист 'Мне нравится' </b>",
+        "already_liked": "<b><emoji document_id=6030801830739448093>⚠️</emoji> Текущий трек уже был добавлен</b>",
         "playing": """<b><emoji document_id=5334665104677941170>🎵</emoji> Сейчас играет: </b><code>{}</code><b> - </b><code>{}</code>
 <b><emoji document_id=6030802195811669198>🎵</emoji> Плейлист:</b> <code>{}</code>
 <b><emoji document_id=4904882772637648609>⏰</emoji> Длина трека: {}</b>
@@ -170,7 +172,7 @@ class YaMu(loader.Module):
 
 <emoji document_id=6030333284167192486>🔗</emoji><a href=\"{}\">Открыть в Яндекс.Музыке</a>
 <emoji document_id=6030333284167192486>🔗</emoji><a href=\"{}\">Открыть на song.link</a></b>""",
-      "_cls_doc": " Модуль для Яндекс.Музыки. Основан на YmNow от vsecoder. Создатель: @murpiz [BETA] ",
+      "_cls_doc": " Модуль для Яндекс.Музыки. Основан на YmNow от vsecoder. Создатель: @murpiz",
        "my_wave": "<b><emoji document_id=6030801830739448093>⚠️</emoji> Я до сих пор не могу найти что вы слушаете. Проверьте токен на правильность.</b>",
         "_cfg_yandexmusictoken": "Токен аккаунта Яндекс.Музыка",
         "guide": (
@@ -249,27 +251,81 @@ class YaMu(loader.Module):
         if self.get("autobio", False):
             self.autobio.start()
 
-    @loader.command()
-    async def yanowcmd(self, message: Message):
-        """Показывает что вы сейчас слушаете на яндекс музыке."""
+    async def yafindcmd(self, message: Message):
+        """Команда для поиска трека на Яндекс.Музыке."""
+        args = utils.get_args_raw(message)
 
-        if not self.config["YandexMusicToken"]:
-            await utils.answer(message, self.strings["no_token"])
-            return
+        if not args:
+            # Если аргументы отсутствуют, используем текст из сообщения-ответа
+            reply = await message.get_reply_message()
+            if reply:
+                args = reply.raw_text.strip()
+            else:
+                await utils.answer(
+                    message,
+                    "<emoji document_id=5843952899184398024>🚫</emoji> <b>Вы не указали название трека.</b>"
+                )
+                return
 
-        collecting_msg = await utils.answer(
+        # Формируем запрос к @murglar_bot
+        query = f"s:ynd {args}"
+
+        # Сообщаем о начале поиска
+        await utils.answer(
             message,
             "<emoji document_id=5426955812905959118>🗯</emoji> <b>Обращаюсь к API Яндекс Музыки</b>"
         )
 
         try:
-            client = ClientAsync(self.config["YandexMusicToken"])
-            await client.init()
-        except Exception:
+            # Выполняем инлайн-запрос
+            results = await message.client.inline_query("@murglar_bot", query)
+
+            if not results:
+                # Если результатов нет
+                await utils.answer(
+                    message,
+                    "<emoji document_id=5843952899184398024>🚫</emoji> <b>Трек не найден на Яндекс.Музыке.</b>"
+                )
+                return
+
+            # Отправляем первый найденный результат
+            await results[0].click(
+                entity=message.chat_id,
+                hide_via=True,
+                reply_to=message.reply_to_msg_id if message.reply_to_msg_id else None
+            )
+            # Удаляем сообщение команды
+            await message.delete()
+
+        except Exception as e:
+            # Обрабатываем ошибки
+            error_message = str(e)
+            await utils.answer(
+                message,
+                f"<emoji document_id=5843952899184398024>🚫</emoji> <b>Произошла ошибка: {error_message}</b>"
+            )
+
+    @loader.command()
+    async def yanowcmd(self, message: Message):
+         """Показывает что вы сейчас слушаете."""
+
+         if not self.config["YandexMusicToken"]:
             await utils.answer(message, self.strings["no_token"])
             return
 
-        try:
+         collecting_msg = await utils.answer(
+            message,
+            "<emoji document_id=5426955812905959118>🗯</emoji> <b>Обращаюсь к API Яндекс Музыки</b>"
+        )
+
+         try:
+            client = ClientAsync(self.config["YandexMusicToken"])
+            await client.init()
+         except Exception:
+            await utils.answer(message, self.strings["no_token"])
+            return
+
+         try:
             res = await get_current_track(client, self.config["YandexMusicToken"])
             track = res["track"]
 
@@ -320,16 +376,16 @@ class YaMu(loader.Module):
                         if resp.status == 200:
                             await f.write(await resp.read())
             audiofile = eyed3.load(file_name)
-            if not audiofile.tag:
-              audiofile.initTag(    )
+            if audiofile != None:
+                audiofile.initTag()
                             
-            song = audiofile.tag
+                song = audiofile.tag
                             
-            song.title = title
-            song.artist = ', '.join(artists)
-            song.album = playlist_name
-            if cover != None: song.images.set(eyed3.id3.frames.ImageFrame.FRONT_COVER, cover, "image/png")
-            song.save()
+                song.title = title
+                song.artist = ', '.join(artists)
+                song.album = playlist_name
+                if cover != None: song.images.set(eyed3.id3.frames.ImageFrame.FRONT_COVER, cover, "image/png")
+                song.save()
 
             await self.client.send_file(
                 message.chat_id,
@@ -343,7 +399,48 @@ class YaMu(loader.Module):
 
             os.remove(file_name)
 
-        except Exception as e:
+         except Exception as e:
             await utils.answer(message, f"<b>Ошибка получения трека: {e}</b>")
             
    
+
+    @loader.command()
+    async def yalikecmd(self, message: Message):
+         """Добавить проигрываемый трек в плейлист 'Мне нравится"""
+         if not self.config["YandexMusicToken"]:
+            await utils.answer(message, self.strings["no_token"])
+            return
+
+         collecting_msg = await utils.answer(
+            message, 
+            "<emoji document_id=5426955812905959118>🗯</emoji> <b>Обращаюсь к API Яндекс Музыки</b>"
+        )
+
+         try:
+            client = ClientAsync(self.config["YandexMusicToken"])
+            await client.init()
+         except Exception:
+            await utils.answer(message, self.strings["no_token"])
+            return
+
+         try:
+            res = await get_current_track(client, self.config["YandexMusicToken"])
+            track = res.get("track")
+
+            if not track:
+                await utils.answer(message, self.strings["no_results"])
+                return
+
+            track = track[0]  # type: ignore
+
+            liked_tracks = await client.users_likes_tracks()
+            liked_tracks = await liked_tracks.fetch_tracks_async()
+
+            if isinstance(liked_tracks, list) and any(liked.id == track["id"] for liked in liked_tracks):
+                await utils.answer(message, self.strings["already_liked"])
+            else:
+                await client.users_likes_tracks_add([track["id"]])
+                await utils.answer(message, self.strings["liked"])
+         except Exception as e:
+            await utils.answer(message, f"<b>Ошибка: {e}</b>")
+            
