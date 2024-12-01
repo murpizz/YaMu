@@ -155,7 +155,7 @@ async def get_current_track(client, token):
         return {"success": False}
 
 
-class YaMuBETA(loader.Module):
+class YaMu(loader.Module):
     """
     Модуль для Яндекс.Музыки. Основан на YmNow от vsecoder (@vsecoder_m). Создатель: @murpiz [BETA]
     """
